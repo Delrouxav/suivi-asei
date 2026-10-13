@@ -1,0 +1,20 @@
+{
+  "name": "Suivi Proximité ASEI",
+  "short_name": "Suivi ASEI",
+  "description": "Suivi de proximité ASEI",
+  "lang": "fr-FR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f6f8",
+  "theme_color": "#16a34a",
+  "icons": [
+    {
+      "src": "./icons/asei-logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

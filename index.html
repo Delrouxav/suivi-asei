@@ -1,0 +1,1389 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#16a34a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="apple-touch-icon" href="./icons/asei-logo.png">
+    <link rel="icon" type="image/png" href="./icons/asei-logo.png">
+    <script>
+// Chargement avec plusieurs sources : si le CDN principal échoue, essayer une source de secours.
+window.__xlsxReady = new Promise((resolve, reject) => {
+  if (window.XLSX) return resolve(window.XLSX);
+  const urls = [
+    'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js',
+    'https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx.bundle.js'
+  ];
+  let index = 0;
+  const next = () => {
+    if (window.XLSX) return resolve(window.XLSX);
+    if (index >= urls.length) return reject(new Error('Bibliothèque Excel indisponible. Vérifiez la connexion Internet.'));
+    const script = document.createElement('script');
+    script.src = urls[index++]; script.async = true;
+    script.onload = () => window.XLSX ? resolve(window.XLSX) : next();
+    script.onerror = next;
+    document.head.appendChild(script);
+  };
+  next();
+});
+</script>
+    <title>Suivi Proximité ASEI</title>
+    <!-- Export XLSX via SheetJS. Une connexion Internet est requise si la bibliothèque n’est pas déjà en cache. -->
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; padding: 15px; background: #f4f6f8; margin: 0; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); width: 100%; max-width: none; min-width: 0; margin: 0 auto; }
+        h2, h3 { margin-top: 0; color: #1e293b; text-align: center; }
+        label { font-weight: 600; display: block; margin-top: 12px; color: #334155; }
+        input, select { width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 15px; background-color: #fff; }
+        
+        .row { display: flex; gap: 10px; }
+        .row > div { flex: 1; }
+
+        .combobox-container { position: relative; width: 100%; }
+        .combobox-input-wrapper { position: relative; display: flex; align-items: center; }
+        .combobox-input { width: 100%; padding-right: 30px; }
+        .combobox-arrow { position: absolute; right: 10px; cursor: pointer; color: #64748b; font-size: 12px; user-select: none; }
+        
+        .combobox-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            max-height: 180px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: none;
+        }
+        .combobox-dropdown div {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 14px;
+        }
+        .combobox-dropdown div:last-child { border-bottom: none; }
+        .combobox-dropdown div:hover { background-color: #f1f5f9; color: #2563eb; }
+
+        button { width: 100%; padding: 12px; margin-top: 10px; border: none; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; }
+        .btn-add { background: #2563eb; color: white; margin-top: 15px; }
+        .btn-export { background: #16a34a; color: white; }
+        .btn-mail { background: #0284c7; color: white; }
+        .btn-custom { background: #6366f1; color: white; }
+        .btn-delete { background: #dc2626; color: white; }
+        .btn-clear { background: #64748b; color: white; font-size: 13px; padding: 8px; margin-top: 10px; }
+        .btn-delete-row { background: #dc2626; color: white; width: 44px; min-width: 44px; min-height: 40px; padding: 6px; margin: 0; border-radius: 6px; font-size: 18px; }
+
+        .btn-insert-row { background: #0f766e; color: white; width: 44px; min-width: 44px; min-height: 40px; padding: 6px; margin: 0 4px 0 0; border-radius: 6px; font-size: 18px; }
+        .sync-status-toggle { display:flex; align-items:center; justify-content:space-between; gap:10px; background:#eef2ff; color:#1e293b; border:1px solid #c7d2fe; text-align:left; padding:12px 14px; margin-top:10px; }
+        .sync-status-left { display:flex; align-items:center; gap:8px; font-weight:700; }
+        .sync-indicator-dot { width:11px; height:11px; min-width:11px; border-radius:50%; display:inline-block; background:#dc2626; box-shadow:0 0 0 2px rgba(220,38,38,.12); }
+        .sync-indicator-dot.connected { background:#16a34a; box-shadow:0 0 0 2px rgba(22,163,74,.14); }
+        .sync-panel { display:none; }
+        .sync-panel.open { display:block; }
+        .sync-status-toggle .chevron { font-size:18px; transition:transform .2s; }
+        .sync-status-toggle.open .chevron { transform:rotate(180deg); }
+        .btn-edit-row { background: #2563eb; color: white; width: 44px; min-width: 44px; min-height: 40px; padding: 6px; margin: 0 4px 0 0; border-radius: 6px; font-size: 18px; }
+        .edit-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 5000; display:flex; align-items:center; justify-content:center; padding:16px; }
+        .edit-box { background:white; width:100%; max-width:430px; padding:18px; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,.25); }
+        .edit-box h3 { margin-bottom:12px; }
+        .edit-buttons { display:flex; gap:8px; }
+        .edit-buttons button { flex:1; }
+
+        .admin-box { background: #f8fafc; border: 1px dashed #cbd5e1; padding: 15px; border-radius: 8px; margin-top: 20px; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }
+        th, td { border: 1px solid #cbd5e1; padding: 6px; text-align: left; }
+        th { background: #e2e8f0; }
+    
+    body { padding-bottom: env(safe-area-inset-bottom); }
+    button { min-height: 44px; touch-action: manipulation; }
+    input, select, textarea { font-size: 16px; }
+    @media (max-width: 600px) { .container { padding: 12px; } .card { padding: 14px; border-radius: 14px; } table { font-size: 12px; } }
+    .table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; }
+    .table-wrap table { min-width: 720px; }
+    .admin-toggle { display:flex; align-items:center; justify-content:space-between; background:#eef2ff; color:#1e293b; border:1px solid #c7d2fe; text-align:left; padding:12px 14px; margin-top:18px; }
+    .admin-content { display:none; }
+    .admin-content.open { display:block; }
+    .admin-toggle .chevron { font-size:18px; transition:transform .2s; }
+    .admin-toggle.open .chevron { transform:rotate(180deg); }
+    @media (max-width: 600px) {
+        body { padding: 8px; }
+        .card { padding: 12px; border-radius: 14px; }
+        h2 { font-size: 28px; }
+        label { font-size: 15px; }
+        .row { gap: 7px; }
+        input, select { min-width: 0; padding: 11px 9px; }
+        button { font-size: 14px; padding: 11px 8px; }
+        .btn-add, .btn-export { font-size: 15px; }
+        .admin-box { padding: 10px; margin-top: 12px; }
+    }
+
+    html { width:100%; min-width:0; min-height:100%; -webkit-text-size-adjust:100%; overflow-x:hidden; }
+    body { max-width:100vw; overflow-x:hidden; }
+    .card, .admin-box, .sync-box, .row, .table-wrap { min-width:0; max-width:100%; }
+    img, input, select, textarea, button { max-width:100%; }
+    .row > div { min-width:0; }
+    @supports (width: 100dvw) { body, .card { width:100%; max-width:100dvw; } }
+    body { width:100%; min-width:0; min-height:100vh; padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+    .card { width:100%; max-width:none; min-width:0; margin:0; }
+    .table-wrap { width:100%; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    @media (max-width: 700px) { .card { padding:12px; } .row { flex-wrap:wrap; } .row > div { min-width:0; flex:1 1 220px; } h2 { font-size:clamp(20px, 5vw, 28px); } }
+    @media (orientation:landscape) and (max-height:500px) { body { padding:4px; } .card { padding:8px; } }
+    </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+.sync-box{margin-top:15px;padding:14px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc}.sync-title{font-weight:700;color:#1e293b}.sync-status{font-size:13px;margin-top:6px;color:#475569}.sync-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.sync-actions button{flex:1;min-width:120px}.sync-ok{color:#15803d}.sync-warn{color:#b45309}.sync-err{color:#b91c1c}.sync-user{font-size:13px;margin-top:6px;color:#334155;word-break:break-all}
+</style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Suivi Proximité ASEI</h2>
+
+    <!-- Synchronisation repliable sous le titre -->
+    <button class="sync-status-toggle" id="syncStatusToggle" type="button" onclick="toggleSyncStatusPanel()">
+        <span class="sync-status-left"><span id="syncIndicatorDot" class="sync-indicator-dot"></span><span>Synchronisation</span></span>
+        <span class="chevron">▼</span>
+    </button>
+    <div class="admin-box sync-panel" id="syncStatusPanel">
+        <div class="sync-box" style="margin-top:0;">
+            <div class="sync-title">☁️ Connexion à la base de données</div>
+            <div id="syncUser" class="sync-user">Non connecté</div>
+            <div id="syncStatus" class="sync-status">Connexion cloud non configurée.</div>
+            <div class="row" style="margin-top:8px;">
+                <div><input id="syncEmail" type="email" placeholder="E-mail"></div>
+                <div><input id="syncPassword" type="password" placeholder="Mot de passe"></div>
+            </div>
+            <div class="sync-actions">
+                <button class="btn-custom" type="button" onclick="syncLogin()">Se connecter</button>
+                <button class="btn-custom" type="button" onclick="syncSignup()">Créer le compte</button>
+                <button class="btn-custom" type="button" onclick="syncNow()">Synchroniser</button>
+                <button class="btn-delete" type="button" onclick="syncLogout()">Déconnexion</button>
+            </div>
+        </div>
+    </div>
+    
+    <label>Date :</label>
+    <input type="date" id="dateInput">
+
+    <div class="row">
+        <div>
+            <label>ID Projet :</label>
+            <div class="combobox-container" id="combo-idProjet">
+                <div class="combobox-input-wrapper">
+                    <input type="text" id="idProjet" class="combobox-input" placeholder="Sélectionner ou saisir..." autocomplete="off">
+                    <span class="combobox-arrow">▼</span>
+                </div>
+                <div class="combobox-dropdown"></div>
+            </div>
+        </div>
+        <div>
+            <label>Groupe :</label>
+            <div class="combobox-container" id="combo-groupe">
+                <div class="combobox-input-wrapper">
+                    <input type="text" id="groupe" class="combobox-input" placeholder="Sélectionner ou saisir..." autocomplete="off">
+                    <span class="combobox-arrow">▼</span>
+                </div>
+                <div class="combobox-dropdown"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div>
+            <label>Type :</label>
+            <div class="combobox-container" id="combo-type">
+                <div class="combobox-input-wrapper">
+                    <input type="text" id="type" class="combobox-input" placeholder="Sélectionner ou saisir..." autocomplete="off">
+                    <span class="combobox-arrow">▼</span>
+                </div>
+                <div class="combobox-dropdown"></div>
+            </div>
+        </div>
+        <div>
+            <label>Dossier :</label>
+            <div class="combobox-container" id="combo-dossier">
+                <div class="combobox-input-wrapper">
+                    <input type="text" id="dossier" class="combobox-input" placeholder="Sélectionner ou saisir..." autocomplete="off">
+                    <span class="combobox-arrow">▼</span>
+                </div>
+                <div class="combobox-dropdown"></div>
+            </div>
+        </div>
+    </div>
+
+    <label>Détails :</label>
+    <div class="combobox-container" id="combo-details">
+        <div class="combobox-input-wrapper">
+            <input type="text" id="details" class="combobox-input" placeholder="Sélectionner ou saisir..." autocomplete="off">
+            <span class="combobox-arrow">▼</span>
+        </div>
+        <div class="combobox-dropdown"></div>
+    </div>
+
+    <label>Temps Réel :</label>
+    <div class="row">
+        <div>
+            <select id="tempsHeures"></select>
+        </div>
+        <div>
+            <select id="tempsMinutes"></select>
+        </div>
+    </div>
+
+
+    <div id="modeInsertion" style="display:none; margin-top:12px; padding:10px; border-radius:8px; background:#ecfeff; border:1px solid #99f6e4; color:#115e59; font-weight:600; text-align:center;"></div>
+    <button id="btnAjouterLigne" class="btn-add" onclick="ajouterLigne()">Ajouter la ligne</button>
+    <button class="btn-export" onclick="exporterExcel()">Télécharger le fichier Excel (.xlsx)</button>
+    
+    <div class="row">
+        <div>
+            <button class="btn-mail" onclick="envoyerMailJour()">Envoyer Mail Journée</button>
+        </div>
+        <div>
+            <button class="btn-mail" onclick="envoyerMailSemaine()">Envoyer Mail Semaine</button>
+        </div>
+    </div>
+
+
+    <!-- Gestion des adresses e-mail : emplacement conservé -->
+    <button class="admin-toggle" id="syncAdminToggle" type="button" onclick="toggleSyncAdmin()">
+        <span>✉️ Gestion des adresses e-mail</span><span class="chevron">▼</span>
+    </button>
+    <div class="admin-box admin-content" id="syncAdminContent">
+        <label>Adresse e-mail destinataire :</label>
+        <div class="row">
+            <div><select id="emailDestinataire"></select></div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+            <div><input type="email" id="nouvelleAdresseEmail" placeholder="Nouvelle adresse e-mail"></div>
+            <div><button class="btn-custom" type="button" onclick="ajouterAdresseEmail()" style="margin-top:4px;">Ajouter</button></div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+            <div><select id="selectAdresseEmail"></select></div>
+            <div><button class="btn-delete" type="button" onclick="supprimerAdresseEmail()" style="margin-top:4px;">Supprimer</button></div>
+        </div>
+    </div>
+
+    <!-- Gestion des listes, repliée par défaut pour gagner de la place sur mobile -->
+    <button class="admin-toggle" id="adminToggle" type="button" onclick="toggleAdmin()">
+        <span>⚙️ Gestion des listes déroulantes</span><span class="chevron">▼</span>
+    </button>
+    <div class="admin-box admin-content" id="adminContent">
+        <label>Choisir la liste :</label>
+        <select id="selectCible" onchange="mettreAJourSelectSuppression()">
+            <option value="idProjet">ID Projet</option>
+            <option value="groupe">Groupe</option>
+            <option value="type">Type</option>
+            <option value="dossier">Dossier</option>
+            <option value="details">Détails</option>
+        </select>
+
+        <label>Nouvel élément à ajouter :</label>
+        <div class="row">
+            <div><input type="text" id="nouvelElement" placeholder="Nom de l'élément..."></div>
+            <div><button class="btn-custom" onclick="ajouterOptionManuelle()" style="margin-top:4px;">Ajouter</button></div>
+        </div>
+
+        <label style="margin-top: 15px;">Élément à modifier :</label>
+        <div class="row">
+            <div><select id="selectModification"></select></div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+            <div><input type="text" id="texteAvant" placeholder="Texte à ajouter devant"></div>
+            <div><button class="btn-custom" onclick="ajouterTexteDevant()" style="margin-top:4px;">Ajouter devant</button></div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+            <div><input type="text" id="texteApres" placeholder="Texte à ajouter derrière"></div>
+            <div><button class="btn-custom" onclick="ajouterTexteDerriere()" style="margin-top:4px;">Ajouter derrière</button></div>
+        </div>
+
+        <label style="margin-top: 15px;">Élément à supprimer :</label>
+        <div class="row">
+            <div><select id="selectSuppression"></select></div>
+            <div><button class="btn-delete" onclick="supprimerOptionManuelle()" style="margin-top:4px;">Supprimer</button></div>
+        </div>
+    </div>
+
+    <h3>Saisies enregistrées (<span id="count">0</span>)</h3>
+    <div class="table-wrap">
+    <table id="tableauSaisies">
+        <thead>
+            <tr>
+                <th>S</th>
+                <th>Date</th>
+                <th>Projet</th>
+                <th>Groupe</th>
+                <th>Type</th>
+                <th>Dossier</th>
+                <th>Détails</th>
+                <th>Temps</th>
+                <th>Total Jour</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    
+    <div id="resumeHeuresGroupe" style="margin:16px 0; padding:14px; border:1px solid #d9e2ec; border-radius:10px; background:#f8fafc;">
+        <h3 style="margin:0 0 10px 0;">Total des heures par groupe</h3>
+        <div id="resumeHeuresGroupeContenu"></div>
+    </div>
+
+    <button class="btn-clear" onclick="viderHistorique()">Effacer toutes les saisies enregistrées</button>
+</div>
+
+<div id="editModal" class="edit-modal" style="display:none;">
+    <div class="edit-box">
+        <h3>Modifier la saisie</h3>
+        <label>Colonne à modifier :</label>
+        <select id="editField">
+            <option value="Date">Date</option>
+            <option value="IDPROJET">Projet</option>
+            <option value="Groupe">Groupe</option>
+            <option value="Type">Type</option>
+            <option value="Dossier">Dossier</option>
+            <option value="Détails">Détails</option>
+            <option value="Temps Reel">Temps</option>
+        </select>
+        <label>Nouvelle valeur :</label>
+        <input id="editValue" type="text">
+        <div class="edit-buttons">
+            <button type="button" onclick="annulerModification()">Annuler</button>
+            <button type="button" class="btn-add" onclick="enregistrerModification()">Enregistrer</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ===== Synchronisation cloud Supabase =====
+    const SUPABASE_URL = 'https://uxomrkwdunydpunpycoz.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_dNYTj1D5MH-cRSkfqrrtUw_U5mSm1_2';
+    const SYNC_TABLE = 'asei_sync_state';
+    let sbClient = null;
+    let syncUser = null;
+    let syncTimer = null;
+    let syncBusy = false;
+    let syncPendingWrite = false;
+
+    function syncSetIndicator(connected) {
+        const dot = document.getElementById('syncIndicatorDot');
+        if (dot) dot.classList.toggle('connected', !!connected);
+    }
+
+    function syncSetStatus(message, cls='') {
+        const el = document.getElementById('syncStatus');
+        if (el) { el.textContent = message; el.className = 'sync-status ' + cls; }
+        if (cls === 'sync-ok') syncSetIndicator(true);
+        else if (cls === 'sync-err' || cls === 'sync-warn') syncSetIndicator(false);
+    }
+    function syncSetUser(user) {
+        const el = document.getElementById('syncUser');
+        if (el) el.textContent = user ? ('Connecté : ' + (user.email || user.id)) : 'Non connecté';
+    }
+    function syncInit() {
+        if (!window.supabase || !window.supabase.createClient) {
+            syncSetStatus('Bibliothèque cloud indisponible. L’application reste utilisable hors ligne.', 'sync-warn');
+            return;
+        }
+        sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+        sbClient.auth.getSession().then(({data}) => {
+            syncUser = data.session ? data.session.user : null;
+            syncSetUser(syncUser);
+            if (syncUser) { syncSetStatus('Connexion cloud active.'); syncInitialLoad(); }
+        }).catch(() => syncSetStatus('Impossible de vérifier la connexion cloud.', 'sync-warn'));
+        sbClient.auth.onAuthStateChange((event, session) => {
+            syncUser = session ? session.user : null;
+            syncSetUser(syncUser);
+            if (syncUser) {
+                syncSetStatus('Connecté. Synchronisation en cours…');
+                syncInitialLoad();
+                if (syncTimer) clearInterval(syncTimer);
+                syncTimer = setInterval(() => { if (document.visibilityState !== 'hidden') syncPull(false); }, 15000);
+            } else {
+                if (syncTimer) clearInterval(syncTimer);
+                syncSetStatus('Non connecté. Les données restent enregistrées sur cet appareil.', 'sync-warn');
+            }
+        });
+    }
+    async function syncLogin() {
+        if (!sbClient) return syncSetStatus('Service cloud indisponible.', 'sync-err');
+        const email = document.getElementById('syncEmail').value.trim();
+        const password = document.getElementById('syncPassword').value;
+        if (!email || !password) return alert('Saisissez votre e-mail et votre mot de passe.');
+        syncSetStatus('Connexion…');
+        const {error} = await sbClient.auth.signInWithPassword({email, password});
+        if (error) syncSetStatus('Erreur de connexion : ' + error.message, 'sync-err');
+    }
+    async function syncSignup() {
+        if (!sbClient) return syncSetStatus('Service cloud indisponible.', 'sync-err');
+        const email = document.getElementById('syncEmail').value.trim();
+        const password = document.getElementById('syncPassword').value;
+        if (!email || !password) return alert('Saisissez votre e-mail et un mot de passe.');
+        if (password.length < 6) return alert('Le mot de passe doit contenir au moins 6 caractères.');
+        syncSetStatus('Création du compte…');
+        const {data, error} = await sbClient.auth.signUp({email, password});
+        if (error) return syncSetStatus('Erreur de création : ' + error.message, 'sync-err');
+        if (data.session) syncSetStatus('Compte créé et connecté.');
+        else syncSetStatus('Compte créé. Vérifiez votre e-mail si Supabase demande une confirmation.', 'sync-warn');
+    }
+    async function syncLogout() {
+        if (!sbClient) return;
+        await sbClient.auth.signOut();
+        syncSetStatus('Déconnecté. Données locales conservées.', 'sync-warn');
+    }
+    async function syncReadCloud() {
+        if (!syncUser) return null;
+        const {data, error} = await sbClient.from(SYNC_TABLE).select('data,lists,updated_at').eq('user_id', syncUser.id).maybeSingle();
+        if (error) throw error;
+        return data;
+    }
+    async function syncWriteCloud() {
+        if (!syncUser) return false;
+        const payload = {user_id: syncUser.id, data: donnees, lists: listes, updated_at: new Date().toISOString()};
+        const {error} = await sbClient.from(SYNC_TABLE).upsert(payload, {onConflict:'user_id'});
+        if (error) throw error;
+        return true;
+    }
+    async function syncInitialLoad() {
+        if (syncBusy || !syncUser) return;
+        syncBusy = true;
+        try {
+            const cloud = await syncReadCloud();
+            const localHasData = Array.isArray(donnees) && donnees.length > 0;
+            if (cloud && Array.isArray(cloud.data)) {
+                donnees = cloud.data;
+                if (cloud.lists && typeof cloud.lists === 'object') listes = cloud.lists;
+                sauvegarderDonnees(); sauvegarderListes();
+                rafraichirListeEmails();
+                recalculerCalculsJournaliers(); rafraichirTableau();
+                syncSetStatus('Données récupérées depuis le cloud.', 'sync-ok');
+            } else if (localHasData || Object.keys(listes || {}).length) {
+                await syncWriteCloud();
+                syncSetStatus('Données locales envoyées vers le cloud.', 'sync-ok');
+            } else {
+                syncSetStatus('Cloud prêt. Aucune saisie enregistrée.', 'sync-ok');
+            }
+        } catch(e) { syncSetStatus('Erreur de synchronisation : ' + (e.message || e), 'sync-err'); }
+        finally { syncBusy = false; }
+    }
+    async function syncPull(show=true) {
+        if (!syncUser || syncBusy) return;
+        syncBusy = true;
+        try {
+            const cloud = await syncReadCloud();
+            if (cloud && Array.isArray(cloud.data)) {
+                donnees = cloud.data;
+                if (cloud.lists && typeof cloud.lists === 'object') listes = cloud.lists;
+                sauvegarderDonnees(); sauvegarderListes();
+                rafraichirListeEmails();
+                recalculerCalculsJournaliers(); rafraichirTableau();
+                if (show) syncSetStatus('Synchronisation terminée.', 'sync-ok');
+            }
+        } catch(e) { if (show) syncSetStatus('Erreur : ' + (e.message || e), 'sync-err'); }
+        finally {
+            syncBusy = false;
+            if (syncPendingWrite && syncUser) syncAfterLocalChange();
+        }
+    }
+    async function syncNow() {
+        if (!syncUser) return alert('Connectez-vous d’abord au cloud.');
+        if (syncBusy) return;
+        syncBusy = true;
+        try {
+            await syncWriteCloud();
+            syncSetStatus('Synchronisation terminée : données envoyées.', 'sync-ok');
+        } catch(e) { syncSetStatus('Erreur de synchronisation : ' + (e.message || e), 'sync-err'); }
+        finally { syncBusy = false; }
+    }
+    async function syncAfterLocalChange() {
+        if (!syncUser) return;
+        syncPendingWrite = true;
+        if (syncBusy) return;
+        syncBusy = true;
+        try {
+            while (syncPendingWrite) {
+                syncPendingWrite = false;
+                await syncWriteCloud();
+            }
+            syncSetStatus('Données synchronisées.', 'sync-ok');
+        } catch(e) {
+            syncSetStatus('Données locales conservées. Synchronisation impossible : ' + (e.message || e), 'sync-warn');
+        } finally {
+            syncBusy = false;
+        }
+    }
+    window.addEventListener('online', () => { if (syncUser) syncPull(false); });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && syncUser) syncPull(false); });
+    syncSetIndicator(false);
+    setTimeout(syncInit, 250);
+    function toggleAdmin() {
+        const content = document.getElementById('adminContent');
+        const toggle = document.getElementById('adminToggle');
+        const open = content.classList.toggle('open');
+        toggle.classList.toggle('open', open);
+    }
+    function toggleSyncAdmin() {
+        const content = document.getElementById('syncAdminContent');
+        const toggle = document.getElementById('syncAdminToggle');
+        const open = content.classList.toggle('open');
+        toggle.classList.toggle('open', open);
+    }
+    function toggleSyncStatusPanel() {
+        const content = document.getElementById('syncStatusPanel');
+        const toggle = document.getElementById('syncStatusToggle');
+        const open = content.classList.toggle('open');
+        toggle.classList.toggle('open', open);
+    }
+    document.getElementById('dateInput').valueAsDate = new Date();
+
+    const selectH = document.getElementById('tempsHeures');
+    for (let h = 0; h < 24; h++) {
+        const val = String(h).padStart(2, '0');
+        selectH.innerHTML += `<option value="${val}" ${val === '00' ? 'selected' : ''}>${val} h</option>`;
+    }
+
+    const selectM = document.getElementById('tempsMinutes');
+    for (let m = 0; m < 60; m += 5) {
+        const val = String(m).padStart(2, '0');
+        selectM.innerHTML += `<option value="${val}">${val} min</option>`;
+    }
+
+    const listesParDefaut = {
+        'idProjet': ['6D3793', 'A35550', 'RTT'],
+        'groupe': ['Installation', 'G12', 'Support', 'Réseau', 'Devis'],
+        'type': ['Trajet', 'Installation sur site', 'Suvi des Tickets', 'Administratif', 'Préparation Chez SPIE', 'intervention sur site', 'Masterisation sur site', 'Tickets', 'Devis', 'Ticket', 'Dépannage Chez SPIE', 'Charge'],
+        'dossier': ['Ticket en cours', 'TEST Masterisation', 'Echange Admin ASEI', 'Gestion du Stock', 'Masterisation', 'Gestion document', 'IL-26-005-006-007-008', 'EI-26-003 EI-26-005', 'EI-26-003', 'EI-26-005', 'Ticket 1709', 'FV-26-001', 'ID-26-003', 'CV-26-002'],
+        'details': ['Trajet', 'Commande', 'Ticket', 'Récupération magasin et étiquetage', 'Fichier suivi des temps'],
+        'emails': ['Xavier.delpratrouan@spie.com']
+    };
+
+    let listes = {};
+    function chargerListes() {
+        const sauvegarde = localStorage.getItem('asei_listes_proximite');
+        if (sauvegarde) {
+            try {
+                listes = JSON.parse(sauvegarde);
+                // Ajoute automatiquement les nouvelles listes aux anciennes installations.
+                Object.keys(listesParDefaut).forEach(cle => {
+                    if (!Array.isArray(listes[cle])) listes[cle] = [...listesParDefaut[cle]];
+                    if (cle === 'details') {
+                        ['Trajet', 'Commande', 'Ticket', 'Récupération magasin et étiquetage', 'Fichier suivi des temps'].forEach(v => { if (!listes[cle].includes(v)) listes[cle].push(v); });
+                    }
+                    if (cle === 'groupe') {
+                        if (!listes[cle].includes('Devis')) listes[cle].push('Devis');
+                    }
+                    if (cle === 'type') {
+                        ['Devis', 'Ticket', 'Dépannage Chez SPIE', 'Charge'].forEach(v => { if (!listes[cle].includes(v)) listes[cle].push(v); });
+                    }
+                    if (cle === 'dossier' && !listes[cle].includes('Ticket')) listes[cle].push('Ticket');
+                });
+                // Ancienne liste Clôture supprimée définitivement.
+                if (Object.prototype.hasOwnProperty.call(listes, 'cloture')) delete listes.cloture;
+            } catch (e) {
+                listes = JSON.parse(JSON.stringify(listesParDefaut));
+            }
+        } else {
+            listes = JSON.parse(JSON.stringify(listesParDefaut));
+        }
+        sauvegarderListes();
+    }
+
+    function sauvegarderListes() {
+        localStorage.setItem('asei_listes_proximite', JSON.stringify(listes));
+    }
+
+    chargerListes();
+
+    function normaliserAdressesEmail() {
+        if (!Array.isArray(listes.emails)) listes.emails = ['Xavier.delpratrouan@spie.com'];
+        listes.emails = listes.emails.map(v => String(v || '').trim()).filter(Boolean);
+        if (!listes.emails.length) listes.emails = ['Xavier.delpratrouan@spie.com'];
+        listes.emails = [...new Set(listes.emails)];
+        sauvegarderListes();
+    }
+
+    function rafraichirListeEmails() {
+        normaliserAdressesEmail();
+        const selectDest = document.getElementById('emailDestinataire');
+        const selectAdmin = document.getElementById('selectAdresseEmail');
+        if (selectDest) {
+            const ancien = selectDest.value;
+            selectDest.innerHTML = listes.emails.map(e => `<option value="${escapeHtmlAttr(e)}">${escapeHtml(e)}</option>`).join('');
+            if (listes.emails.includes(ancien)) selectDest.value = ancien;
+        }
+        if (selectAdmin) {
+            const ancien = selectAdmin.value;
+            selectAdmin.innerHTML = listes.emails.map(e => `<option value="${escapeHtmlAttr(e)}">${escapeHtml(e)}</option>`).join('');
+            if (listes.emails.includes(ancien)) selectAdmin.value = ancien;
+        }
+    }
+
+    function ajouterAdresseEmail() {
+        const input = document.getElementById('nouvelleAdresseEmail');
+        const email = input.value.trim();
+        if (!email) return alert('Saisissez une adresse e-mail.');
+        const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        if (!ok) return alert('Adresse e-mail invalide.');
+        if (listes.emails.includes(email)) return alert('Cette adresse e-mail existe déjà.');
+        listes.emails.push(email);
+        sauvegarderListes();
+        rafraichirListeEmails();
+        syncAfterLocalChange();
+        input.value = '';
+    }
+
+    function supprimerAdresseEmail() {
+        const select = document.getElementById('selectAdresseEmail');
+        const email = select.value;
+        if (!email) return alert('Aucune adresse sélectionnée.');
+        if (listes.emails.length <= 1) return alert('Conservez au moins une adresse e-mail.');
+        if (!confirm(`Supprimer l'adresse ${email} ?`)) return;
+        listes.emails = listes.emails.filter(e => e !== email);
+        sauvegarderListes();
+        rafraichirListeEmails();
+        syncAfterLocalChange();
+    }
+
+    rafraichirListeEmails();
+
+    let donnees = [];
+    function chargerDonnees() {
+        const sauvegardeDonnees = localStorage.getItem('asei_donnees_proximite');
+        if (sauvegardeDonnees) {
+            try { donnees = JSON.parse(sauvegardeDonnees); } catch (e) { donnees = []; }
+        }
+    }
+
+    function sauvegarderDonnees() {
+        localStorage.setItem('asei_donnees_proximite', JSON.stringify(donnees));
+    }
+
+    chargerDonnees();
+    // Nettoyage des anciennes données : la colonne Clôture n'est plus utilisée.
+    let donneesModifiees = false;
+    donnees.forEach(d => {
+        if (Object.prototype.hasOwnProperty.call(d, 'Clôture')) { delete d['Clôture']; donneesModifiees = true; }
+    });
+    if (donneesModifiees) sauvegarderDonnees();
+    recalculerCalculsJournaliers();
+    rafraichirTableau();
+
+    function mettreAJourSelectSuppression() {
+        const cible = document.getElementById('selectCible').value;
+        const selectSup = document.getElementById('selectSuppression');
+        const selectMod = document.getElementById('selectModification');
+        selectSup.innerHTML = '';
+        selectMod.innerHTML = '';
+        if (listes[cible]) {
+            listes[cible].forEach(item => {
+                const label = item === '' ? '(vide)' : item;
+                selectSup.innerHTML += `<option value="${escapeHtmlAttr(item)}">${escapeHtml(label)}</option>`;
+                selectMod.innerHTML += `<option value="${escapeHtmlAttr(item)}">${escapeHtml(label)}</option>`;
+            });
+        }
+    }
+
+    mettreAJourSelectSuppression();
+
+    function synchroniserIdProjetDepuisGroupe() {
+        const groupe = document.getElementById('groupe').value.trim();
+        const idProjet = document.getElementById('idProjet');
+        if (groupe === 'G12') {
+            idProjet.value = 'A35550';
+        } else if (groupe === 'Installation') {
+            idProjet.value = '6D3793';
+        } else if (normaliserValeur(groupe) === 'devis') {
+            idProjet.value = 'A44861';
+            ajouterSiNouveau('idProjet', 'A44861');
+        }
+    }
+
+    function normaliserValeur(valeur) {
+        return String(valeur || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .trim();
+    }
+
+    function appliquerAutomatismes() {
+        const type = document.getElementById('type').value.trim();
+        const dossier = document.getElementById('dossier').value.trim();
+        const idProjet = document.getElementById('idProjet');
+        const dossierInput = document.getElementById('dossier');
+        const detailsInput = document.getElementById('details');
+        const t = normaliserValeur(type);
+        const d = normaliserValeur(dossier);
+
+        // Type « Devis » => ID Projet A44861
+        if (t === 'devis') {
+            idProjet.value = 'A44861';
+            ajouterSiNouveau('idProjet', 'A44861');
+        }
+
+        // Automatismes liés au Type
+        const detailsParType = {
+            'trajet': 'Trajet',
+            'installation sur site': 'Commande',
+            'preparation chez spie': 'Commande'
+        };
+        const dossierParType = {
+            'ticket': 'Ticket',
+            'tickets': 'Ticket',
+            'depannage chez spie': 'Ticket',
+            'suvi des tickets': 'Ticket en cours',
+            'suivi des tickets': 'Ticket en cours',
+            'intervention sur site': 'Ticket',
+            'charge': 'Ticket',
+            'masterisation sur site': 'Ticket',
+            'preparation chez spie': 'Masterisation'
+        };
+
+        if (Object.prototype.hasOwnProperty.call(detailsParType, t)) {
+            detailsInput.value = detailsParType[t];
+        }
+        if (Object.prototype.hasOwnProperty.call(dossierParType, t)) {
+            dossierInput.value = dossierParType[t];
+        }
+
+        // Automatismes liés au Dossier
+        if (d === 'gestion stock' || d === 'gestion du stock') {
+            detailsInput.value = 'Récupération magasin et étiquetage';
+        } else if (d === 'gestion document') {
+            detailsInput.value = 'Fichier suivi des temps';
+        }
+    }
+
+    function setupCombobox(id) {
+        const container = document.getElementById('combo-' + id);
+        const input = document.getElementById(id);
+        const dropdown = container.querySelector('.combobox-dropdown');
+        const arrow = container.querySelector('.combobox-arrow');
+
+        function renderDropdown(filter = '') {
+            dropdown.innerHTML = '';
+            const items = listes[id] || [];
+            const filtered = filter === '' 
+                ? items 
+                : items.filter(item => item.toLowerCase().includes(filter.toLowerCase()));
+            
+            if (filtered.length === 0) {
+                dropdown.style.display = 'none';
+                return;
+            }
+
+            filtered.forEach(item => {
+                const div = document.createElement('div');
+                div.textContent = item;
+                if (id === 'idProjet') {
+                    const projetIndex = (listes.idProjet || []).indexOf(item);
+                    const couleursProjet = ['#DDEBF7', '#E2F0D9', '#FFF2CC', '#FCE4D6', '#E4DFEC', '#D9EAF7'];
+                    if (projetIndex >= 0) div.style.backgroundColor = couleursProjet[projetIndex % couleursProjet.length];
+                }
+                div.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    input.value = item;
+                    dropdown.style.display = 'none';
+                    if (id === 'groupe') synchroniserIdProjetDepuisGroupe();
+                    if (id === 'type' || id === 'dossier') appliquerAutomatismes();
+                });
+                div.onmousedown = function(e) {
+                    e.preventDefault();
+                    input.value = item;
+                    dropdown.style.display = 'none';
+                    if (id === 'groupe') synchroniserIdProjetDepuisGroupe();
+                    if (id === 'type' || id === 'dossier') appliquerAutomatismes();
+                };
+                dropdown.appendChild(div);
+            });
+            dropdown.style.display = 'block';
+        }
+
+        input.addEventListener('focus', () => renderDropdown(''));
+        input.addEventListener('click', () => renderDropdown(''));
+        input.addEventListener('touchstart', () => renderDropdown(''));
+        input.addEventListener('input', () => {
+            renderDropdown(input.value);
+            if (id === 'groupe') synchroniserIdProjetDepuisGroupe();
+            if (id === 'type' || id === 'dossier') appliquerAutomatismes();
+        });
+        
+        arrow.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (dropdown.style.display === 'block') {
+                dropdown.style.display = 'none';
+            } else {
+                renderDropdown('');
+                input.focus();
+            }
+        });
+
+        arrow.addEventListener('touchend', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (dropdown.style.display === 'block') {
+                dropdown.style.display = 'none';
+            } else {
+                renderDropdown('');
+                input.focus();
+            }
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!container.contains(e.target)) dropdown.style.display = 'none';
+        });
+
+        document.addEventListener('touchend', (e) => {
+            if (!container.contains(e.target)) dropdown.style.display = 'none';
+        });
+    }
+
+    ['idProjet', 'groupe', 'type', 'dossier', 'details'].forEach(setupCombobox);
+
+    function getIsoWeek(dateStr) {
+        const d = new Date(dateStr);
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+        const yearStart = new Date(d.getFullYear(), 0, 1);
+        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    }
+
+    function timeToMinutes(timeStr) {
+        if (!timeStr) return 0;
+        const parts = timeStr.split(':');
+        return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+    }
+
+    function minutesToTime(totalMinutes) {
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+    }
+
+    function ajouterSiNouveau(fieldId, valeur) {
+        if (!valeur || !valeur.trim()) return;
+        const val = valeur.trim();
+        if (!listes[fieldId].includes(val)) {
+            listes[fieldId].push(val);
+            sauvegarderListes();
+            syncAfterLocalChange();
+            if (document.getElementById('selectCible').value === fieldId) {
+                mettreAJourSelectSuppression();
+            }
+        }
+    }
+
+    function ajouterOptionManuelle() {
+        const cible = document.getElementById('selectCible').value;
+        const valeurInput = document.getElementById('nouvelElement').value.trim();
+
+        if (!valeurInput) {
+            alert("Veuillez saisir un texte pour l'élément !");
+            return;
+        }
+
+        if (!listes[cible].includes(valeurInput)) {
+            listes[cible].push(valeurInput);
+            sauvegarderListes();
+            syncAfterLocalChange();
+            document.getElementById('nouvelElement').value = '';
+            mettreAJourSelectSuppression();
+            alert(`L'élément "${valeurInput}" a bien été ajouté et sauvegardé !`);
+        } else {
+            alert("Cet élément existe déjà dans la liste.");
+        }
+    }
+
+    function modifierTexteOption(ajout, position) {
+        const cible = document.getElementById('selectCible').value;
+        const selectMod = document.getElementById('selectModification');
+        const ancienneValeur = selectMod.value;
+        const texte = String(ajout || '').trim();
+
+        if (!texte) {
+            alert('Veuillez saisir le texte à ajouter.');
+            return;
+        }
+        if (ancienneValeur === '') {
+            alert('Sélectionnez un élément à modifier.');
+            return;
+        }
+        const index = (listes[cible] || []).indexOf(ancienneValeur);
+        if (index < 0) {
+            alert('L’élément sélectionné n’existe plus dans la liste.');
+            mettreAJourSelectSuppression();
+            return;
+        }
+
+        const nouvelleValeur = position === 'avant' ? texte + ancienneValeur : ancienneValeur + texte;
+        if (nouvelleValeur === ancienneValeur) return;
+        if (listes[cible].includes(nouvelleValeur)) {
+            alert('Cet élément existe déjà dans la liste.');
+            return;
+        }
+
+        listes[cible][index] = nouvelleValeur;
+        sauvegarderListes();
+        syncAfterLocalChange();
+        mettreAJourSelectSuppression();
+        document.getElementById(position === 'avant' ? 'texteAvant' : 'texteApres').value = '';
+        document.getElementById('selectModification').value = nouvelleValeur;
+        alert(`L'élément a été modifié en "${nouvelleValeur}" et synchronisé.`);
+    }
+
+    function ajouterTexteDevant() {
+        modifierTexteOption(document.getElementById('texteAvant').value, 'avant');
+    }
+
+    function ajouterTexteDerriere() {
+        modifierTexteOption(document.getElementById('texteApres').value, 'apres');
+    }
+
+    function supprimerOptionManuelle() {
+        const cible = document.getElementById('selectCible').value;
+        const selectSup = document.getElementById('selectSuppression');
+        const valeurASupprimer = selectSup.value;
+
+        if (!valeurASupprimer) {
+            alert("Aucun élément sélectionné pour la suppression.");
+            return;
+        }
+
+        const index = listes[cible].indexOf(valeurASupprimer);
+        if (index > -1) {
+            listes[cible].splice(index, 1);
+            sauvegarderListes();
+            syncAfterLocalChange();
+            mettreAJourSelectSuppression();
+            alert(`L'élément "${valeurASupprimer}" a bien été supprimé et la liste a été mise à jour.`);
+        }
+    }
+
+    function recalculerCalculsJournaliers() {
+        const totauxParDate = {};
+        donnees.forEach(d => {
+            const mins = timeToMinutes(d['Temps Reel']);
+            totauxParDate[d.Date] = (totauxParDate[d.Date] || 0) + mins;
+        });
+
+        const dernierIndexParDate = {};
+        donnees.forEach((d, index) => {
+            dernierIndexParDate[d.Date] = index;
+        });
+
+        donnees.forEach((d, index) => {
+            if (index === dernierIndexParDate[d.Date]) {
+                d['Calcul'] = minutesToTime(totauxParDate[d.Date]);
+            } else {
+                d['Calcul'] = '';
+            }
+        });
+    }
+
+    function ajouterLigne() {
+        const dateVal = document.getElementById('dateInput').value;
+        if (!dateVal) return alert("Veuillez sélectionner une date");
+
+        appliquerAutomatismes();
+
+        const h = document.getElementById('tempsHeures').value;
+        const m = document.getElementById('tempsMinutes').value;
+        const tempsFormatted = `${h}:${m}:00`;
+
+        const idProjetVal = document.getElementById('idProjet').value.trim();
+        const groupeVal = document.getElementById('groupe').value.trim();
+        const typeVal = document.getElementById('type').value.trim();
+        const dossierVal = document.getElementById('dossier').value.trim();
+        const detailsVal = document.getElementById('details').value.trim();
+
+        ajouterSiNouveau('idProjet', idProjetVal);
+        ajouterSiNouveau('groupe', groupeVal);
+        ajouterSiNouveau('type', typeVal);
+        ajouterSiNouveau('dossier', dossierVal);
+        ajouterSiNouveau('details', detailsVal);
+
+        const ligne = {
+            "S": getIsoWeek(dateVal),
+            "Date": dateVal,
+            "IDPROJET": idProjetVal,
+            "Groupe": groupeVal,
+            "Type": typeVal,
+            "Dossier": dossierVal,
+            "Détails": detailsVal,
+            "Temps Reel": tempsFormatted,
+            "Calcul": ""
+        };
+
+        if (insertionIndex !== null && insertionIndex >= 0 && insertionIndex <= donnees.length) {
+            donnees.splice(insertionIndex, 0, ligne);
+        } else {
+            donnees.push(ligne);
+        }
+        annulerInsertion();
+        recalculerCalculsJournaliers();
+        sauvegarderDonnees();
+        rafraichirTableau();
+        syncAfterLocalChange();
+
+        // Remise à zéro après chaque ajout : Type, Dossier et Détails restent vides.
+        document.getElementById('type').value = '';
+        document.getElementById('dossier').value = '';
+        document.getElementById('details').value = '';
+        // L'heure revient toujours à 00 h.
+        document.getElementById('tempsHeures').value = '00';
+        document.getElementById('tempsMinutes').value = '00';
+    }
+
+    function couleurPastelPourDate(date, index) {
+        const couleurs = [
+            '#E8F1FF', // bleu pastel
+            '#E8F8EE', // vert pastel
+            '#FFF5D9', // jaune pastel
+            '#FCE8F3', // rose pastel
+            '#F0E8FF'  // violet pastel
+        ];
+        const datesUniques = [];
+        donnees.forEach(ligne => {
+            if (!datesUniques.includes(ligne.Date)) datesUniques.push(ligne.Date);
+        });
+        const position = datesUniques.indexOf(date);
+        return couleurs[(position >= 0 ? position : index) % couleurs.length];
+    }
+
+    function couleurPourIdProjet(valeur) {
+        const v = String(valeur || '').trim().toUpperCase();
+        if (v === '6D3793') return '#C8E5F3';
+        if (v === 'A35550') return '#E6CEE6';
+        const couleurs = ['#DDEBF7', '#E2F0D9', '#FFF2CC', '#FCE4D6', '#E4DFEC'];
+        const autres = (listes.idProjet || []).filter(x => { const u=String(x||'').trim().toUpperCase(); return u !== '6D3793' && u !== 'A35550'; });
+        const index = autres.indexOf(valeur);
+        if (index >= 0) return couleurs[index % couleurs.length];
+        return '#F3F4F6';
+    }
+
+    function afficherTotauxHeuresParGroupe() {
+        const parDate = {};
+        const general = {};
+        let totalGeneralMinutes = 0;
+
+        donnees.forEach(d => {
+            const date = d.Date || 'Sans date';
+            const groupe = d.Groupe || 'Sans groupe';
+            const minutes = timeToMinutes(d['Temps Reel']);
+            totalGeneralMinutes += minutes;
+
+            if (!parDate[date]) parDate[date] = {};
+            parDate[date][groupe] = (parDate[date][groupe] || 0) + minutes;
+            general[groupe] = (general[groupe] || 0) + minutes;
+        });
+
+        const conteneur = document.getElementById('resumeHeuresGroupeContenu');
+        if (!conteneur) return;
+        if (donnees.length === 0) {
+            conteneur.innerHTML = '<div style="color:#64748b;">Aucune heure enregistrée.</div>';
+            return;
+        }
+
+        const groupes = Array.from(new Set(donnees.map(d => d.Groupe || 'Sans groupe')));
+        const dates = Object.keys(parDate).sort();
+        let html = '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; min-width:520px;">';
+        html += '<thead><tr><th style="text-align:left;padding:7px;border-bottom:1px solid #cbd5e1;">Date</th>';
+        groupes.forEach(g => { html += `<th style="text-align:center;padding:7px;border-bottom:1px solid #cbd5e1;">${escapeHtml(g)}</th>`; });
+        html += '<th style="text-align:center;padding:7px;border-bottom:1px solid #cbd5e1;">Total jour</th></tr></thead><tbody>';
+
+        dates.forEach(date => {
+            let totalJour = 0;
+            html += `<tr contenteditable="false"><td style="padding:7px;border-bottom:1px solid #e2e8f0;font-weight:600;">${escapeHtml(formatDateFR(date))}</td>`;
+            groupes.forEach(g => {
+                const mins = parDate[date][g] || 0;
+                totalJour += mins;
+                html += `<td contenteditable="false" style="padding:7px;border-bottom:1px solid #e2e8f0;text-align:center;">${mins ? escapeHtml(minutesToTime(mins).slice(0,5)) + ' h' : '—'}</td>`;
+            });
+            html += `<td contenteditable="false" style="padding:7px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:700;">${minutesToTime(totalJour).slice(0,5)} h</td></tr>`;
+        });
+
+        html += '<tr contenteditable="false" style="background:#eef2f7;font-weight:700;"><td style="padding:8px;">TOTAL GÉNÉRAL</td>';
+        groupes.forEach(g => {
+            const mins = general[g] || 0;
+            html += `<td contenteditable="false" style="padding:8px;text-align:center;">${minutesToTime(mins).slice(0,5)} h</td>`;
+        });
+        html += `<td contenteditable="false" style="padding:8px;text-align:center;">${minutesToTime(totalGeneralMinutes).slice(0,5)} h</td></tr>`;
+        html += '</tbody></table></div>';
+        conteneur.innerHTML = html;
+    }
+
+    function rafraichirTableau() {
+        document.getElementById('count').innerText = donnees.length;
+        const tbody = document.querySelector('#tableauSaisies tbody');
+        tbody.innerHTML = '';
+        donnees.forEach((d, index) => {
+            const couleurDate = couleurPastelPourDate(d.Date, index);
+            const couleurProjet = couleurPourIdProjet(d.IDPROJET);
+            const tr = `<tr>
+                <td>${d.S}</td>
+                <td style="background-color:${couleurDate}; font-weight:600;">${formatDateFR(d.Date)}</td>
+                <td style="background-color:${couleurProjet}; font-weight:600;">${escapeHtml(d.IDPROJET || '')}</td>
+                <td>${escapeHtml(d.Groupe || '')}</td>
+                <td>${escapeHtml(d.Type || '')}</td>
+                <td>${escapeHtml(d.Dossier || '')}</td>
+                <td>${escapeHtml(d.Détails || '')}</td>
+                <td>${escapeHtml(d['Temps Reel'] || '')}</td>
+                <td><strong>${d.Calcul}</strong></td>
+                <td><button class="btn-insert-row" type="button" onclick="preparerInsertion(${index}, true)" title="Ajouter une ligne avant">⬆️</button><button class="btn-insert-row" type="button" onclick="preparerInsertion(${index}, false)" title="Ajouter une ligne après">⬇️</button><button class="btn-edit-row" type="button" onclick="ouvrirModification(${index})" title="Modifier cette ligne">✏️</button><button class="btn-delete-row" type="button" onclick="supprimerLigne(${index})" title="Effacer cette ligne">🗑️</button></td>
+            </tr>`;
+            tbody.innerHTML += tr;
+        });
+        afficherTotauxHeuresParGroupe();
+    }
+
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function escapeHtmlAttr(value) {
+        return escapeHtml(value);
+    }
+
+    let insertionIndex = null;
+
+    function preparerInsertion(index, avant) {
+        if (index < 0 || index >= donnees.length) return;
+        insertionIndex = avant ? index : index + 1;
+        document.getElementById('idProjet').value = '';
+        document.getElementById('groupe').value = '';
+        document.getElementById('type').value = '';
+        document.getElementById('dossier').value = '';
+        document.getElementById('details').value = '';
+        document.getElementById('tempsHeures').value = '00';
+        document.getElementById('tempsMinutes').value = '00';
+        document.getElementById('dateInput').value = donnees[index].Date || document.getElementById('dateInput').value;
+        const position = avant ? 'avant' : 'après';
+        const mode = document.getElementById('modeInsertion');
+        mode.textContent = `✏️ Remplissez la nouvelle ligne ${position} de la ligne ${index + 1}, puis validez avec « Insérer la ligne ».`;
+        mode.style.display = 'block';
+        const bouton = document.getElementById('btnAjouterLigne');
+        bouton.textContent = 'Insérer la ligne';
+        bouton.style.background = '#0f766e';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function annulerInsertion() {
+        insertionIndex = null;
+        const mode = document.getElementById('modeInsertion');
+        if (mode) mode.style.display = 'none';
+        const bouton = document.getElementById('btnAjouterLigne');
+        if (bouton) { bouton.textContent = 'Ajouter la ligne'; bouton.style.background = ''; }
+    }
+
+    let indexLigneModification = -1;
+
+    function ouvrirModification(index) {
+        if (index < 0 || index >= donnees.length) return;
+        indexLigneModification = index;
+        const champ = document.getElementById('editField');
+        const valeur = document.getElementById('editValue');
+        champ.value = 'Date';
+        valeur.value = donnees[index]['Date'] || '';
+        document.getElementById('editModal').style.display = 'flex';
+        valeur.focus();
+    }
+
+    document.getElementById('editField').addEventListener('change', function() {
+        if (indexLigneModification < 0) return;
+        document.getElementById('editValue').value = donnees[indexLigneModification][this.value] || '';
+    });
+
+    function annulerModification() {
+        indexLigneModification = -1;
+        document.getElementById('editModal').style.display = 'none';
+    }
+
+    function enregistrerModification() {
+        if (indexLigneModification < 0 || indexLigneModification >= donnees.length) return;
+        const champ = document.getElementById('editField').value;
+        let valeur = document.getElementById('editValue').value.trim();
+        if (!valeur) {
+            alert('Veuillez saisir une valeur.');
+            return;
+        }
+        if (champ === 'Temps Reel') {
+            if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(valeur)) {
+                alert('Le temps doit être au format HH:MM ou HH:MM:SS.');
+                return;
+            }
+            if (valeur.split(':').length === 2) valeur += ':00';
+        }
+        donnees[indexLigneModification][champ] = valeur;
+        if (champ === 'Date') {
+            donnees[indexLigneModification]['S'] = getIsoWeek(valeur);
+        }
+        if (['IDPROJET','Groupe','Type','Dossier','Détails'].includes(champ)) {
+            const map = {IDPROJET:'idProjet', Groupe:'groupe', Type:'type', Dossier:'dossier', Détails:'details'};
+            if (map[champ]) ajouterSiNouveau(map[champ], valeur);
+        }
+        recalculerCalculsJournaliers();
+        sauvegarderDonnees();
+        rafraichirTableau();
+        syncAfterLocalChange();
+        annulerModification();
+    }
+
+    function supprimerLigne(index) {
+        if (index < 0 || index >= donnees.length) return;
+        if (confirm("Voulez-vous vraiment effacer cette ligne ?")) {
+            donnees.splice(index, 1);
+            recalculerCalculsJournaliers();
+            sauvegarderDonnees();
+            rafraichirTableau();
+            syncAfterLocalChange();
+        }
+    }
+
+    function viderHistorique() {
+        if (confirm("Voulez-vous vraiment effacer toutes les saisies enregistrées ?")) {
+            donnees = [];
+            localStorage.removeItem('asei_donnees_proximite');
+            rafraichirTableau();
+            syncAfterLocalChange();
+        }
+    }
+
+    function exporterExcel() {
+        if (!Array.isArray(donnees) || donnees.length === 0) { alert("Aucune saisie à exporter."); return false; }
+        if (window.Android && typeof Android.exportExcel === 'function') {
+            try { Android.exportExcel(JSON.stringify(donnees)); return true; } catch (e) { console.warn(e); }
+        }
+        if (window.electronAPI && typeof window.electronAPI.exportExcel === 'function') {
+            window.electronAPI.exportExcel(donnees).then(resultat => {
+                if (resultat && resultat.error) alert('Erreur export Excel : ' + resultat.error);
+            }).catch(e => alert('Erreur export Excel : ' + e.message));
+            return true;
+        }
+        if (typeof XLSX === 'undefined') {
+            alert("La bibliothèque Excel n'est pas encore chargée. Vérifiez la connexion Internet puis réessayez dans quelques secondes. Aucun fichier CSV ne sera créé.");
+            return false;
+        }
+        const ordre = ["Date", "IDPROJET", "Groupe", "Type", "Dossier", "Détails", "Temps Reel", "Calcul"];
+        const toutes = [...new Set(donnees.flatMap(row => Object.keys(row)))];
+        const headers = ordre.filter(h => toutes.includes(h));
+        toutes.forEach(h => { if (!headers.includes(h) && h !== 'S') headers.push(h); });
+        const colLetter = n => XLSX.utils.encode_col(n-1);
+        const parseMinutes = value => { const m=String(value||'').trim().match(/^(\d{1,3}):(\d{1,2})(?::\d{1,2})?$/); return m ? Number(m[1])*60+Number(m[2]) : (typeof value==='number'?Math.round(value*1440):0); };
+        const serial = minutes => minutes / 1440;
+        const dateCol=headers.indexOf('Date')+1, timeCol=headers.indexOf('Temps Reel')+1, calcCol=headers.indexOf('Calcul')+1;
+        const groupCol=headers.indexOf('Groupe')+1, projectCol=headers.indexOf('IDPROJET')+1;
+        const dates=[...new Set(donnees.map(r=>String(r.Date||'')).filter(Boolean))];
+        const groupes=[...new Set(donnees.map(r=>String(r.Groupe||'').trim()||'Sans groupe'))];
+        const projets=[...new Set(donnees.map(r=>String(r.IDPROJET||'').trim()).filter(Boolean))];
+        const minutesByDate={}, minutesByDateGroup={}, minutesByDateProject={}, minutesByGroup={}, minutesByProject={};
+        donnees.forEach(r=>{
+            const d=String(r.Date||''), g=String(r.Groupe||'').trim()||'Sans groupe', pr=String(r.IDPROJET||'').trim();
+            const mins=parseMinutes(r['Temps Reel']);
+            minutesByDate[d]=(minutesByDate[d]||0)+mins;
+            minutesByDateGroup[d] ||= {}; minutesByDateGroup[d][g]=(minutesByDateGroup[d][g]||0)+mins;
+            minutesByDateProject[d] ||= {}; if(pr) minutesByDateProject[d][pr]=(minutesByDateProject[d][pr]||0)+mins;
+            minutesByGroup[g]=(minutesByGroup[g]||0)+mins; if(pr) minutesByProject[pr]=(minutesByProject[pr]||0)+mins;
+        });
+        const pastel=['E8F1FF','E8F8EE','FFF5D9','FCE8F3','F0E8FF'];
+        const projectColors=['DDEBF7','E2F0D9','FFF2CC','FCE4D6','E4DFEC'];
+        const projectColor=pr=>{const v=String(pr||'').trim().toUpperCase();if(v==='6D3793')return 'C8E5F3';if(v==='A35550')return 'E6CEE6';const ix=projets.findIndex(x=>String(x).trim()===String(pr).trim());return projectColors[Math.max(0,ix)%projectColors.length];};
+        const style=(fill,bold=false,align='center')=>({fill:{patternType:'solid',fgColor:{rgb:fill}},font:{bold,color:'172033'},alignment:{vertical:'center',horizontal:align,wrapText:true},border:{bottom:{style:'thin',color:{rgb:'D1D5DB'}}}});
+        const headerStyle={fill:{patternType:'solid',fgColor:{rgb:'BFECC8'}},font:{bold:true,color:{rgb:'172033'}},alignment:{vertical:'center',horizontal:'center',wrapText:true},border:{bottom:{style:'medium',color:{rgb:'6B9F78'}}}};
+        const rows=[headers, ...donnees.map(r=>headers.map(h=>h==='Temps Reel'?serial(parseMinutes(r[h])):h==='Calcul'?'':(r[h]==null?'':r[h])))];
+        const ws=XLSX.utils.aoa_to_sheet(rows);
+        const lastIndex={}; donnees.forEach((r,i)=>lastIndex[String(r.Date||'')]=i);
+        if(dateCol && timeCol && calcCol){const dL=colLetter(dateCol),tL=colLetter(timeCol);donnees.forEach((r,i)=>{const n=i+2;const isLast=lastIndex[String(r.Date||'')]==i;ws[XLSX.utils.encode_cell({r:n-1,c:calcCol-1})]=isLast?{t:'n',v:serial(minutesByDate[String(r.Date||'')]||0),f:`IF(COUNTIF($${dL}$2:$${dL}$10000,${dL}${n})=COUNTIF($${dL}$2:${dL}${n},${dL}${n}),SUMIF($${dL}$2:$${dL}$10000,${dL}${n},$${tL}$2:$${tL}$10000),"")`,z:'[h]:mm'}:{t:'s',v:''};});}
+        ws['!cols']=headers.map(h=>({wch:({Date:14,IDPROJET:15,Groupe:18,Type:25,Dossier:25,Détails:42,'Temps Reel':14,Calcul:12})[h]||18}));
+        ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:0,c:headers.length-1}})};
+        ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:donnees.length,c:headers.length-1}});
+        ws['!freeze']={xSplit:0,ySplit:1};
+        headers.forEach((h,c)=>{const cell=ws[XLSX.utils.encode_cell({r:0,c})];if(cell)cell.s=headerStyle;});
+        donnees.forEach((r,i)=>headers.forEach((h,c)=>{const cell=ws[XLSX.utils.encode_cell({r:i+1,c})];if(!cell)return;let fill='FFFFFF';if(h==='Date')fill=pastel[Math.max(0,dates.indexOf(String(r.Date||'')))%pastel.length];if(h==='IDPROJET'&&r.IDPROJET)fill=projectColor(r.IDPROJET);cell.s=style(fill,false,h==='Détails'?'left':h==='Temps Reel'?'right':'center');if(h==='Temps Reel'||h==='Calcul')cell.z='[h]:mm';}));
+        const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Suivi');
+        // Résumé par groupe : valeurs calculées immédiatement + formules pour les modifications ultérieures dans Excel.
+        const gs=[['Total des heures par groupe'],[],['Date',...groupes,'Total jour']];
+        dates.forEach((date,i)=>{const rr=i+4,row=[date];groupes.forEach((g,j)=>{const c=j+2,L=colLetter(c),mins=(minutesByDateGroup[date]||{})[g]||0;row.push({t:'n',v:serial(mins),f:`SUMIFS(Suivi!$${colLetter(timeCol)}$2:$${colLetter(timeCol)}$10000,Suivi!$${colLetter(dateCol)}$2:$${colLetter(dateCol)}$10000,$A${rr},Suivi!$${colLetter(groupCol)}$2:$${colLetter(groupCol)}$10000,${g==='Sans groupe'?'""':`${L}$3`})`,z:'[h]:mm'});});const total=groupes.reduce((a,g)=>a+((minutesByDateGroup[date]||{})[g]||0),0);row.push({t:'n',v:serial(total),f:`SUM(B${rr}:${colLetter(groupes.length+1)}${rr})`,z:'[h]:mm'});gs.push(row);});
+        const gt=dates.length+4,gr=['TOTAL GÉNÉRAL'];groupes.forEach((g,j)=>{const L=colLetter(j+2);gr.push({t:'n',v:serial(minutesByGroup[g]||0),f:`SUM(${L}4:${L}${gt-1})`,z:'[h]:mm'});});const totalAll=Object.values(minutesByGroup).reduce((a,b)=>a+b,0);gr.push({t:'n',v:serial(totalAll),f:`SUM(B${gt}:${colLetter(groupes.length+1)}${gt})`,z:'[h]:mm'});gs.push(gr);
+        const wg=XLSX.utils.aoa_to_sheet(gs);wg['!cols']=[{wch:18},...groupes.map(()=>({wch:18})),{wch:18}];wg['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:gs.length-1,c:groupes.length+1}});gs.forEach((row,ri)=>row.forEach((v,ci)=>{const cell=wg[XLSX.utils.encode_cell({r:ri,c:ci})];if(cell){cell.s=(ri===2||ri===gs.length-1)?headerStyle:style(ri%2?'F8FAFC':'FFFFFF',ri===gs.length-1,ci===0?'left':'center');if(ri>=3&&ci>0)cell.z='[h]:mm';}}));XLSX.utils.book_append_sheet(wb,wg,'Totaux groupes');
+        // Totaux par projet et par jour, puis total de la période exportée.
+        const ps=[['Date',...projets,'Total jour']];
+        dates.forEach((date,i)=>{const rr=i+2,row=[date];projets.forEach((pr,j)=>{const c=j+2,L=colLetter(c),mins=(minutesByDateProject[date]||{})[pr]||0;row.push({t:'n',v:serial(mins),f:`SUMIFS(Suivi!$${colLetter(timeCol)}$2:$${colLetter(timeCol)}$10000,Suivi!$${colLetter(dateCol)}$2:$${colLetter(dateCol)}$10000,$A${rr},Suivi!$${colLetter(projectCol)}$2:$${colLetter(projectCol)}$10000,${L}$1)`,z:'[h]:mm'});});const total=projets.reduce((a,pr)=>a+((minutesByDateProject[date]||{})[pr]||0),0);row.push({t:'n',v:serial(total),f:`SUM(B${rr}:${colLetter(projets.length+1)}${rr})`,z:'[h]:mm'});ps.push(row);});
+        const pt=dates.length+2,prTotal=['TOTAL SEMAINE'];projets.forEach((pr,j)=>{const L=colLetter(j+2);prTotal.push({t:'n',v:serial(minutesByProject[pr]||0),f:`SUM(${L}2:${L}${pt-1})`,z:'[h]:mm'});});const totalProject=Object.values(minutesByProject).reduce((a,b)=>a+b,0);prTotal.push({t:'n',v:serial(totalProject),f:`SUM(B${pt}:${colLetter(projets.length+1)}${pt})`,z:'[h]:mm'});ps.push(prTotal);
+        const wp=XLSX.utils.aoa_to_sheet(ps);wp['!cols']=[{wch:18},...projets.map(()=>({wch:18})),{wch:18}];wp['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:ps.length-1,c:projets.length+1}});ps.forEach((row,ri)=>row.forEach((v,ci)=>{const cell=wp[XLSX.utils.encode_cell({r:ri,c:ci})];if(cell){cell.s=(ri===0||ri===ps.length-1)?headerStyle:style(ri%2?'F8FAFC':'FFFFFF',ri===ps.length-1,ci===0?'left':'center');if(ri>0&&ci>0)cell.z='[h]:mm';}}));XLSX.utils.book_append_sheet(wb,wp,'Totaux projets');
+        wb.Workbook=wb.Workbook||{};wb.Workbook.CalcPr={calcMode:'auto',fullCalcOnLoad:true,forceFullCalc:true};
+        XLSX.writeFile(wb,'Suivi_Proximite_ASEI.xlsx',{bookType:'xlsx',cellDates:false,cellStyles:true});
+        return true;
+    }
+
+    // Ancienne fonction CSV conservée uniquement pour compatibilité avec les appels historiques.
+    function exporterCSVFallback() { return exporterExcel(); }
+
+    function formatDateFR(dateValue) {
+        if (!dateValue) return '';
+        if (dateValue instanceof Date) {
+            if (isNaN(dateValue.getTime())) return '';
+            return `${String(dateValue.getDate()).padStart(2, '0')}/${String(dateValue.getMonth() + 1).padStart(2, '0')}/${dateValue.getFullYear()}`;
+        }
+        const value = String(dateValue);
+        const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+        return value;
+    }
+
+    function envoyerMailJour() {
+        if (donnees.length === 0) return alert("Aucune donnée saisie !");
+        exporterExcel();
+
+        const dateVal = document.getElementById('dateInput').value;
+        const dateFormatted = dateVal ? `${dateVal.split('-')[2]}/${dateVal.split('-')[1]}/${dateVal.split('-')[0]}` : formatDateFR(new Date());
+
+        const destinataire = document.getElementById('emailDestinataire')?.value || listes.emails[0] || 'Xavier.delpratrouan@spie.com';
+        const objet = `Fichier suivi du jour ${dateFormatted}`;
+        const corps = `Bonjour, voici le fichier de suivi à contrôler\nCordialement,`;
+
+        setTimeout(() => {
+            if (window.Android && Android.mail) Android.mail(destinataire, objet, corps); else window.location.href = `mailto:${destinataire}?subject=${encodeURIComponent(objet)}&body=${encodeURIComponent(corps)}`;
+        }, 1000);
+    }
+
+    function envoyerMailSemaine() {
+        if (donnees.length === 0) return alert("Aucune donnée saisie !");
+        exporterExcel();
+
+        const dateVal = document.getElementById('dateInput').value;
+        const refDate = dateVal ? new Date(dateVal) : new Date();
+        const numSemaine = getIsoWeek(refDate.toISOString().split('T')[0]);
+
+        const day = refDate.getDay();
+        const monday = new Date(refDate);
+        monday.setDate(refDate.getDate() + (day === 0 ? -6 : 1 - day));
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+
+        const destinataire = document.getElementById('emailDestinataire')?.value || listes.emails[0] || 'Xavier.delpratrouan@spie.com';
+        const objet = `Fichier suivi de la semaine ${numSemaine} du ${formatDateFR(monday)} au ${formatDateFR(sunday)}`;
+        const corps = `Bonjour, voici le fichier de suivi à contrôler\nCordialement,`;
+
+        setTimeout(() => {
+            if (window.Android && Android.mail) Android.mail(destinataire, objet, corps); else window.location.href = `mailto:${destinataire}?subject=${encodeURIComponent(objet)}&body=${encodeURIComponent(corps)}`;
+        }, 1000);
+    }
+</script>
+
+<script>if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.error));</script>
+</body>
+</html>
